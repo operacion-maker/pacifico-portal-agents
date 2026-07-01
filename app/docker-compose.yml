@@ -1,0 +1,11 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - AGENT_MODE=databricks
+      - DATABRICKS_HOST=https://adb-3999497447772171.11.azuredatabricks.net
+      - DATABRICKS_SERVING_ENDPOINT=agents_iacg_chatbot_poc_desa-sch_knowledge-modelator_assistant
+      - PORT=3000

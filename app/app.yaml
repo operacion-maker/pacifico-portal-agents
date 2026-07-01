@@ -1,0 +1,9 @@
+command: ["sh", "start.sh"]
+
+env:
+  - name: AGENT_MODE
+    value: "databricks"
+  - name: DATABRICKS_SERVING_ENDPOINT
+    value: "agents_iacg_chatbot_poc_desa-sch_knowledge-modelator_assistant"
+  - name: REDIS_URL
+    value: "rediss://:<REDIS_PASSWORD>@redidataeu2d01.redis.cache.windows.net:6380/0"
