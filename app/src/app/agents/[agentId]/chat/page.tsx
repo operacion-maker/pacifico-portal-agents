@@ -8,6 +8,7 @@ import { MessageList } from "@/components/chat/MessageList";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { UsernameModal } from "@/components/chat/UsernameModal";
+import { MetaBuilderChat } from "@/components/agents/metabuilder/MetaBuilderChat";
 import { useChatHistory } from "@/hooks/useChatHistory";
 import { useUsername } from "@/hooks/useUsername";
 import { useAgent } from "@/components/chat/AgentContext";
@@ -35,21 +36,12 @@ export default function AgentChatPage() {
     })();
   }, []);
 
-  // Resolved username: server (Databricks) takes priority, then local modal
   const username = serverUsername ?? localUsername;
   const loaded = serverUsername !== undefined && localLoaded;
 
-  const {
-    sessions,
-    activeChatId,
-    createNewChat,
-    selectChat,
-    getMessages,
-    saveMessages,
-    deleteChat,
-  } = useChatHistory(username);
+  const { sessions, activeChatId, createNewChat, selectChat, getMessages, saveMessages, deleteChat } =
+    useChatHistory(username);
 
-  // Scope thread ID by agent + user
   const threadId = username
     ? `${username}:${agent.id}:${activeChatId}`
     : `${agent.id}:${activeChatId}`;
@@ -62,23 +54,14 @@ export default function AgentChatPage() {
       headers: username ? { "x-user-id": username } : undefined,
     });
 
-  // Track whether we're currently loading messages to avoid save during load
   const loadingMessagesRef = useRef(false);
 
-  // Load messages when switching chats
   useEffect(() => {
     loadingMessagesRef.current = true;
     (async () => {
       const stored = await getMessages(activeChatId);
       if (stored.length > 0) {
-        setMessages(
-          stored.map((m) => ({
-            id: m.id,
-            role: m.role,
-            content: m.content,
-            createdAt: new Date(m.createdAt),
-          }))
-        );
+        setMessages(stored.map((m) => ({ id: m.id, role: m.role, content: m.content, createdAt: new Date(m.createdAt) })));
       } else {
         setMessages([]);
       }
@@ -87,7 +70,6 @@ export default function AgentChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeChatId]);
 
-  // Save messages when they change
   useEffect(() => {
     if (loadingMessagesRef.current || messages.length === 0) return;
     const chatMessages = messages.map((m) => ({
@@ -97,11 +79,7 @@ export default function AgentChatPage() {
       createdAt: m.createdAt?.getTime() ?? Date.now(),
     }));
     const firstUserMsg = messages.find((m) => m.role === "user");
-    saveMessages(
-      activeChatId,
-      chatMessages,
-      firstUserMsg?.content.slice(0, 60)
-    );
+    saveMessages(activeChatId, chatMessages, firstUserMsg?.content.slice(0, 60));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, isLoading]);
 
@@ -111,27 +89,17 @@ export default function AgentChatPage() {
     setSidebarOpen(false);
   }, [createNewChat, setMessages]);
 
-  const handleSelectChat = useCallback(
-    (id: string) => {
-      selectChat(id);
-      setSidebarOpen(false);
-    },
-    [selectChat]
-  );
+  const handleSelectChat = useCallback((id: string) => {
+    selectChat(id);
+    setSidebarOpen(false);
+  }, [selectChat]);
 
-  const handleSuggestionClick = useCallback(
-    (text: string) => {
-      append({ role: "user", content: text });
-    },
-    [append]
-  );
+  const handleSuggestionClick = useCallback((text: string) => {
+    append({ role: "user", content: text });
+  }, [append]);
 
   if (!loaded) return null;
-
-  // Show modal only in local dev (no server username) and no local username set
-  if (!serverUsername && !localUsername) {
-    return <UsernameModal onSubmit={setLocalUsername} />;
-  }
+  if (!serverUsername && !localUsername) return <UsernameModal onSubmit={setLocalUsername} />;
 
   return (
     <div className="flex h-screen bg-background">
@@ -156,22 +124,12 @@ export default function AgentChatPage() {
             >
               <Menu className="w-5 h-5" />
             </button>
-            <Image
-              src="/dalogo.png"
-              alt="Data & Analytics"
-              width={100}
-              height={40}
-              className="h-7 w-auto object-contain"
-            />
+            <Image src="/dalogo.png" alt="Data & Analytics" width={100} height={40} className="h-7 w-auto object-contain" />
             <div className="w-px h-5 bg-border" />
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-              <h1 className="text-sm font-semibold text-foreground">
-                {agent.name}
-              </h1>
-              {agent.status === "beta" && (
-                <span className="status-badge status-beta">Beta</span>
-              )}
+              <h1 className="text-sm font-semibold text-foreground">{agent.name}</h1>
+              {agent.status === "beta" && <span className="status-badge status-beta">Beta</span>}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -185,34 +143,38 @@ export default function AgentChatPage() {
             >
               <MessageSquareHeart className="w-4 h-4" />
             </a>
-            {/* Only show logout in local mode (where username comes from modal) */}
             {!serverUsername && (
-              <button
-                onClick={clearUsername}
-                title="Cerrar sesión"
-                className="p-1.5 rounded-lg text-muted hover:text-foreground hover:bg-card-hover"
-              >
+              <button onClick={clearUsername} title="Cerrar sesión" className="p-1.5 rounded-lg text-muted hover:text-foreground hover:bg-card-hover">
                 <LogOut className="w-4 h-4" />
               </button>
             )}
           </div>
         </header>
 
-        {/* Chat area */}
-        <MessageList
-          messages={messages}
-          isLoading={isLoading}
-          onSuggestionClick={handleSuggestionClick}
-          agentConfig={agent}
-        />
-
-        <ChatInput
-          value={input}
-          onChange={handleInputChange}
-          onSubmit={() => handleSubmit()}
-          isLoading={isLoading}
-          placeholder={agent.chatConfig.placeholder}
-        />
+        {/* Chat area — MetaBuilder has its specialized interactive UI */}
+        {agent.id === "metabuilder" ? (
+          <MetaBuilderChat
+            agentId={agent.id}
+            threadId={threadId}
+            username={username ?? undefined}
+          />
+        ) : (
+          <>
+            <MessageList
+              messages={messages}
+              isLoading={isLoading}
+              onSuggestionClick={handleSuggestionClick}
+              agentConfig={agent}
+            />
+            <ChatInput
+              value={input}
+              onChange={handleInputChange}
+              onSubmit={() => handleSubmit()}
+              isLoading={isLoading}
+              placeholder={agent.chatConfig.placeholder}
+            />
+          </>
+        )}
       </div>
     </div>
   );
