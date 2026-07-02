@@ -22,6 +22,7 @@ const CATALOG_DATA: Record<string, Record<string, string[]>> = {
     ],
     "sch_udv_vw": [
       "ud_poliza_cert_cobro_reaseg_gen_core",
+      "hd_dac_poliza_corto_plazo_cert_gen_core",
     ],
   },
 };
