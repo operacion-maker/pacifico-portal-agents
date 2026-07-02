@@ -132,21 +132,15 @@ interface MetaBuilderChatProps {
 
 export function MetaBuilderChat({ agentId, threadId, username }: MetaBuilderChatProps) {
   const { containerRef } = useScrollToBottom<HTMLDivElement>([]);
-  const [resolvedMessages, setResolvedMessages] = useState<Array<{ id: string; role: "user" | "assistant"; content: string }>>([]);
+  // resolvedAssistant: stores only agent replies that came back after HITL (resume flow)
+  const [resolvedAssistant, setResolvedAssistant] = useState<Array<{ id: string; role: "assistant"; content: string }>>([]);
   const idCounter = useRef(0);
 
-  const { messages, input, handleInputChange, handleSubmit, isLoading, append, setInput } = useChat({
+  const { messages, isLoading, append } = useChat({
     api: `/api/agents/${agentId}/chat`,
     id: threadId,
     body: { threadId },
     headers: username ? { "x-user-id": username } : undefined,
-    onFinish: (msg) => {
-      // Once streaming finishes, move the assistant message to resolvedMessages
-      setResolvedMessages((prev) => [
-        ...prev,
-        { id: msg.id, role: "assistant", content: msg.content },
-      ]);
-    },
   });
 
   // Find the last streaming assistant message (currently being streamed)
@@ -155,10 +149,7 @@ export function MetaBuilderChat({ agentId, threadId, username }: MetaBuilderChat
 
   const handleFQNSelect = useCallback(
     (fqn: string) => {
-      // Add user message to resolved
-      const uid = `user-${++idCounter.current}`;
-      setResolvedMessages((prev) => [...prev, { id: uid, role: "user", content: fqn }]);
-      // Send to agent
+      // Only append — useChat tracks user message automatically, no manual duplication
       append({ role: "user", content: fqn });
     },
     [append]
@@ -166,17 +157,15 @@ export function MetaBuilderChat({ agentId, threadId, username }: MetaBuilderChat
 
   const handleDraftResolved = useCallback((content: string) => {
     const rid = `resolved-${++idCounter.current}`;
-    setResolvedMessages((prev) => [...prev, { id: rid, role: "assistant", content }]);
+    setResolvedAssistant((prev) => [...prev, { id: rid, role: "assistant", content }]);
   }, []);
 
-  // All visible messages: resolved + any currently-streaming user messages
-  const allMessages = [
-    ...resolvedMessages,
-    ...messages
-      .filter((m) => m.role === "user" || m.role === "assistant")
-      .filter((m) => !resolvedMessages.find((r) => r.id === m.id))
-      .map((m) => ({ ...m, role: m.role as "user" | "assistant" })),
-  ].sort((a, b) => a.id.localeCompare(b.id));
+  // All visible messages: useChat messages (user + streaming assistant) + resolved HITL replies
+  const chatMessages = messages
+    .filter((m) => m.role === "user" || m.role === "assistant")
+    .map((m) => ({ id: m.id, role: m.role as "user" | "assistant", content: m.content }));
+
+  const allMessages = [...chatMessages, ...resolvedAssistant];
 
   return (
     <div className="flex flex-col h-full">

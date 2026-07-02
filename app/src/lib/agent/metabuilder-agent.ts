@@ -7,38 +7,119 @@ export interface HumanFeedback {
 }
 
 /**
- * Adapter to call the MetaBuilder Databricks Model Serving endpoint.
- * Handles the streaming Server-Sent Events (SSE) that the MLflow PythonModel Generator yields.
- *
- * Supports:
- * - Contrato A: FQN string → initializes LangGraph run
- * - Contrato B: human_feedback + thread_id → resumes HITL node
+ * Builds the full invocation URL from env vars.
  */
-async function buildMetaBuilderRequest(
+function buildInvokeUrl(endpointName: string): string {
+  const host = process.env.DATABRICKS_HOST ?? "";
+  const cleanHost = host.match(/^https?:\/\//) ? host.replace(/\/$/, "") : `https://${host}`;
+  return `${cleanHost}/serving-endpoints/${endpointName}/invocations`;
+}
+
+/**
+ * Resolves the auth token. Priority: OBO token → PAT env var.
+ */
+function resolveToken(auth: DatabricksAuthInfo): string | null {
+  return auth.accessToken ?? process.env.DATABRICKS_TOKEN ?? null;
+}
+
+/**
+ * Converts the Databricks model serving response (which returns chunks as
+ * JSON arrays of strings) into a Vercel AI SDK Data Stream.
+ *
+ * Databricks streaming format per line:
+ *   ["chunk1", "chunk2"]
+ * or just a plain string.
+ */
+function databricksResponseToVercelStream(response: Response): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+
+  return new ReadableStream({
+    async start(controller) {
+      const reader = response.body!.getReader();
+      let buffer = "";
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+
+          // Process complete lines
+          const lines = buffer.split("\n");
+          // Keep incomplete last line in buffer
+          buffer = lines.pop() ?? "";
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+
+            let text = "";
+            try {
+              // Databricks format: JSON array of strings ["chunk1", "chunk2"]
+              const parsed = JSON.parse(trimmed) as unknown;
+              if (Array.isArray(parsed)) {
+                text = parsed.map((s) => String(s)).join("");
+              } else if (typeof parsed === "string") {
+                text = parsed;
+              } else {
+                text = trimmed;
+              }
+            } catch {
+              // Plain text chunk
+              text = trimmed;
+            }
+
+            if (text) {
+              const data = `0:${JSON.stringify(text)}\n`;
+              controller.enqueue(encoder.encode(data));
+            }
+          }
+        }
+
+        // Flush any remaining buffer
+        if (buffer.trim()) {
+          const data = `0:${JSON.stringify(buffer)}\n`;
+          controller.enqueue(encoder.encode(data));
+        }
+
+        // Vercel AI SDK stream termination
+        controller.enqueue(
+          encoder.encode(`e:{"finishReason":"stop","usage":{"promptTokens":0,"completionTokens":0},"isContinued":false}\n`)
+        );
+        controller.enqueue(
+          encoder.encode(`d:{"finishReason":"stop","usage":{"promptTokens":0,"completionTokens":0}}\n`)
+        );
+      } catch (err) {
+        console.error("[MetaBuilder] Stream read error:", err);
+        controller.error(err);
+      } finally {
+        controller.close();
+      }
+    },
+  });
+}
+
+/**
+ * Core fetch to the MetaBuilder endpoint.
+ * NOTE: Do NOT send Accept: text/event-stream — the Databricks endpoint
+ * uses its own chunked JSON format, not standard SSE.
+ */
+async function fetchMetaBuilder(
   payload: Record<string, unknown>,
   auth: DatabricksAuthInfo
 ): Promise<Response> {
-  const host = process.env.DATABRICKS_HOST;
   const endpointName = process.env.METABUILDER_SERVING_ENDPOINT;
+  if (!endpointName) throw new Error("Missing METABUILDER_SERVING_ENDPOINT");
 
-  if (!host || !endpointName) {
-    throw new Error("Missing DATABRICKS_HOST or METABUILDER_SERVING_ENDPOINT");
-  }
-
-  const url = host.match(/^https?:\/\//)
-    ? `${host.replace(/\/$/, "")}/serving-endpoints/${endpointName}/invocations`
-    : `https://${host}/serving-endpoints/${endpointName}/invocations`;
-
-  const token = auth.accessToken || process.env.DATABRICKS_TOKEN;
-  if (!token) {
-    throw new Error("No authentication token available");
-  }
+  const url = buildInvokeUrl(endpointName);
+  const token = resolveToken(auth);
+  if (!token) throw new Error("No authentication token available for Databricks");
 
   const controller = new AbortController();
-  // 90s timeout — optimized flow should complete in < 60s
   const timeout = setTimeout(() => controller.abort(), 90_000);
 
-  console.log(`[MetaBuilder] POST ${url} — payload keys: ${Object.keys(payload).join(", ")}`);
+  console.log(`[MetaBuilder] POST ${url}`);
 
   try {
     const response = await fetch(url, {
@@ -46,7 +127,7 @@ async function buildMetaBuilderRequest(
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${token}`,
-        "Accept": "text/event-stream",
+        // NOTE: No "Accept: text/event-stream" — endpoint uses chunked JSON format
       },
       body: JSON.stringify(payload),
       signal: controller.signal,
@@ -56,7 +137,7 @@ async function buildMetaBuilderRequest(
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("[MetaBuilder] API Error:", response.status, errorText);
+      console.error(`[MetaBuilder] API Error ${response.status}:`, errorText);
       throw new Error(`Databricks API Error: ${response.status} - ${errorText}`);
     }
 
@@ -65,38 +146,6 @@ async function buildMetaBuilderRequest(
     clearTimeout(timeout);
     throw err;
   }
-}
-
-function wrapResponseAsVercelStream(response: Response): ReadableStream<Uint8Array> {
-  const encoder = new TextEncoder();
-  const decoder = new TextDecoder();
-
-  return new ReadableStream({
-    async start(controller) {
-      const reader = response.body!.getReader();
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const chunk = decoder.decode(value, { stream: true });
-          // Wrap raw text/SSE chunks in Vercel AI SDK data stream format
-          const data = `0:${JSON.stringify(chunk)}\n`;
-          controller.enqueue(encoder.encode(data));
-        }
-
-        const finishData = `e:{"finishReason":"stop","usage":{"promptTokens":0,"completionTokens":0},"isContinued":false}\n`;
-        controller.enqueue(encoder.encode(finishData));
-        const doneData = `d:{"finishReason":"stop","usage":{"promptTokens":0,"completionTokens":0}}\n`;
-        controller.enqueue(encoder.encode(doneData));
-      } catch (err) {
-        console.error("[MetaBuilder] Stream reading error:", err);
-        controller.error(err);
-      } finally {
-        controller.close();
-      }
-    },
-  });
 }
 
 /**
@@ -112,11 +161,11 @@ export async function callMetaBuilderAgent(
 
   const payload = {
     messages: [{ role: "user", content: fqn }],
-    custom_inputs: threadId ? { thread_id: threadId } : {},
+    custom_inputs: { thread_id: threadId ?? `anon-${Date.now()}` },
   };
 
-  const response = await buildMetaBuilderRequest(payload, auth);
-  return wrapResponseAsVercelStream(response);
+  const response = await fetchMetaBuilder(payload, auth);
+  return databricksResponseToVercelStream(response);
 }
 
 /**
@@ -128,13 +177,13 @@ export async function callMetaBuilderAgentResume(
   auth: DatabricksAuthInfo
 ): Promise<ReadableStream<Uint8Array>> {
   const payload = {
-    messages: [{ role: "user", content: "Ajustar borrador según correcciones de la UI." }],
+    messages: [{ role: "user", content: "Procesar feedback del Data Steward." }],
     custom_inputs: {
       thread_id: threadId,
       human_feedback: humanFeedback,
     },
   };
 
-  const response = await buildMetaBuilderRequest(payload, auth);
-  return wrapResponseAsVercelStream(response);
+  const response = await fetchMetaBuilder(payload, auth);
+  return databricksResponseToVercelStream(response);
 }

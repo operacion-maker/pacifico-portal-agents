@@ -7,7 +7,14 @@ export function getRedis(): Redis | null {
   if (!url) return null;
 
   if (!client) {
-    client = new Redis(url, { lazyConnect: true, maxRetriesPerRequest: 1 });
+    client = new Redis(url, {
+      lazyConnect: true,
+      maxRetriesPerRequest: 1,
+      connectTimeout: 5000,
+      retryStrategy: () => null, // disable automatic retries — fail fast in local dev
+    });
+    // Suppress unhandled error events (ETIMEDOUT, etc.) — connection is best-effort
+    client.on("error", () => {});
     client.connect().catch(() => {
       client = null;
     });
