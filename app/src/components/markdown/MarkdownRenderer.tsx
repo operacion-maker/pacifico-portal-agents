@@ -2,6 +2,7 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import dynamic from "next/dynamic";
 import { CodeBlock } from "./CodeBlock";
 import { MermaidBlock } from "./MermaidBlock";
 import {
@@ -11,13 +12,27 @@ import {
   TableRow,
   TableCell,
 } from "./TableBlock";
-import { DraftReviewCard } from "../agents/metabuilder/DraftReviewCard";
-import { QualityScoreCard } from "../agents/metabuilder/QualityScoreCard";
-import { GovernanceStatusCard } from "../agents/metabuilder/GovernanceStatusCard";
-import { HITLReviewCard } from "../agents/metabuilder/HITLReviewCard";
-import { PipelineProgressTracker } from "../agents/metabuilder/PipelineProgressTracker";
-import { TableInputCard } from "../agents/metabuilder/TableInputCard";
 import type { Components } from "react-markdown";
+
+// Lazy-load MetaBuilder widgets — only loaded when a metabuilder-* block appears in chat
+const DraftReviewCard = dynamic(() =>
+  import("../agents/metabuilder/DraftReviewCard").then((m) => ({ default: m.DraftReviewCard }))
+);
+const QualityScoreCard = dynamic(() =>
+  import("../agents/metabuilder/QualityScoreCard").then((m) => ({ default: m.QualityScoreCard }))
+);
+const GovernanceStatusCard = dynamic(() =>
+  import("../agents/metabuilder/GovernanceStatusCard").then((m) => ({ default: m.GovernanceStatusCard }))
+);
+const HITLReviewCard = dynamic(() =>
+  import("../agents/metabuilder/HITLReviewCard").then((m) => ({ default: m.HITLReviewCard }))
+);
+const PipelineProgressTracker = dynamic(() =>
+  import("../agents/metabuilder/PipelineProgressTracker").then((m) => ({ default: m.PipelineProgressTracker }))
+);
+const TableInputCard = dynamic(() =>
+  import("../agents/metabuilder/TableInputCard").then((m) => ({ default: m.TableInputCard }))
+);
 
 interface MarkdownRendererProps {
   content: string;

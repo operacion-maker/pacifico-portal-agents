@@ -1,9 +1,19 @@
 import { type DatabricksAuthInfo } from "@/types";
+import crypto from "crypto";
 
 export interface HumanFeedback {
   general_observations?: string;
   edited_table_comment?: string;
   edited_columns?: Record<string, string>;
+}
+
+/**
+ * Converts any string into a valid UUID format.
+ * Databricks LangGraph state savers strictly require a valid UUID for thread_id.
+ */
+function toDeterministicUUID(str: string): string {
+  const hash = crypto.createHash("md5").update(str).digest("hex");
+  return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
 }
 
 /**
@@ -117,9 +127,12 @@ async function fetchMetaBuilder(
   if (!token) throw new Error("No authentication token available for Databricks");
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 90_000);
+  // Aumentar a 5 minutos (300,000 ms) porque el agente de Databricks puede tardar hasta 2 minutos
+  const timeout = setTimeout(() => controller.abort(), 300_000);
 
+  const payloadString = JSON.stringify(payload);
   console.log(`[MetaBuilder] POST ${url}`);
+  console.log(`[MetaBuilder] Payload:`, payloadString);
 
   try {
     const response = await fetch(url, {
@@ -127,9 +140,9 @@ async function fetchMetaBuilder(
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${token}`,
-        // NOTE: No "Accept: text/event-stream" — endpoint uses chunked JSON format
+        "Accept": "text/event-stream",
       },
-      body: JSON.stringify(payload),
+      body: payloadString,
       signal: controller.signal,
     });
 
@@ -161,7 +174,7 @@ export async function callMetaBuilderAgent(
 
   const payload = {
     messages: [{ role: "user", content: fqn }],
-    custom_inputs: { thread_id: threadId ?? `anon-${Date.now()}` },
+    custom_inputs: { thread_id: toDeterministicUUID(threadId ?? `anon-${Date.now()}`) },
   };
 
   const response = await fetchMetaBuilder(payload, auth);
@@ -179,7 +192,7 @@ export async function callMetaBuilderAgentResume(
   const payload = {
     messages: [{ role: "user", content: "Procesar feedback del Data Steward." }],
     custom_inputs: {
-      thread_id: threadId,
+      thread_id: toDeterministicUUID(threadId),
       human_feedback: humanFeedback,
     },
   };

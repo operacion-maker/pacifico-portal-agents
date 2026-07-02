@@ -3,7 +3,8 @@
 import { motion } from "framer-motion";
 import Link from "next/link";
 import Image from "next/image";
-import { ArrowRight, Sparkles } from "lucide-react";
+import { useState } from "react";
+import { ArrowRight, Sparkles, Loader2, AlertCircle } from "lucide-react";
 import { getAllAgents, type AgentConfig } from "@/lib/agents/agent-registry";
 
 const containerVariants = {
@@ -38,6 +39,7 @@ function StatusBadge({ status }: { status: AgentConfig["status"] }) {
 
 function AgentCard({ agent }: { agent: AgentConfig }) {
   const isAccessible = agent.status !== "coming-soon";
+  const [isNavigating, setIsNavigating] = useState(false);
 
   return (
     <motion.div
@@ -86,10 +88,19 @@ function AgentCard({ agent }: { agent: AgentConfig }) {
       {isAccessible ? (
         <Link
           href={`/agents/${agent.id}/chat`}
-          className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary-hover transition-all duration-300 hover:scale-[1.02] hover:shadow-lg hover:shadow-primary/20"
+          onClick={() => setIsNavigating(true)}
+          className={`inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-white text-sm font-semibold transition-all duration-300 ${
+            isNavigating 
+              ? "bg-slate-400 cursor-not-allowed opacity-90" 
+              : "bg-primary hover:bg-primary-hover hover:scale-[1.02] hover:shadow-lg hover:shadow-primary/20"
+          }`}
         >
-          Iniciar
-          <ArrowRight className="w-4 h-4" />
+          {isNavigating ? "Cargando..." : "Iniciar"}
+          {isNavigating ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <ArrowRight className="w-4 h-4" />
+          )}
         </Link>
       ) : (
         <div className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-slate-100 text-slate-400 text-sm font-semibold cursor-not-allowed">

@@ -11,3 +11,6 @@ yarn-error.log*
 .pnpm-debug.log*
 .DS_Store
 *.local
+__pycache__/
+*.py[cod]
+*$py.class

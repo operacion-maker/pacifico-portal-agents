@@ -1,5 +1,9 @@
 "use client";
 
+// Pre-generate both agent routes at build time to avoid 25s on-demand compilation
+export const dynamic = "force-dynamic";
+
+
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useChat } from "@ai-sdk/react";
 import { Menu, LogOut, MessageSquareHeart } from "lucide-react";

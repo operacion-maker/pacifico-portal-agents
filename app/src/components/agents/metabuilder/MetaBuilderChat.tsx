@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useChat } from "@ai-sdk/react";
-import { Database, ChevronDown } from "lucide-react";
+import { Database, ChevronDown, AlertCircle } from "lucide-react";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { StreamingIndicator } from "@/components/chat/StreamingIndicator";
@@ -22,8 +22,6 @@ const CATALOG_DATA: Record<string, Record<string, string[]>> = {
     ],
     "sch_udv_vw": [
       "ud_poliza_cert_cobro_reaseg_gen_core",
-      "vw_poliza_cobro_gen",
-      "vw_reaseguro_participacion_gen",
     ],
   },
 };
@@ -136,7 +134,7 @@ export function MetaBuilderChat({ agentId, threadId, username }: MetaBuilderChat
   const [resolvedAssistant, setResolvedAssistant] = useState<Array<{ id: string; role: "assistant"; content: string }>>([]);
   const idCounter = useRef(0);
 
-  const { messages, isLoading, append } = useChat({
+  const { messages, isLoading, append, error } = useChat({
     api: `/api/agents/${agentId}/chat`,
     id: threadId,
     body: { threadId },
@@ -196,6 +194,17 @@ export function MetaBuilderChat({ agentId, threadId, username }: MetaBuilderChat
               agentId={agentId}
               onResolved={handleDraftResolved}
             />
+          )}
+
+          {/* Error Banner */}
+          {error && (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 flex items-start gap-3 shadow-sm mx-auto w-full mt-4">
+              <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold text-red-900 mb-1">Error al comunicarse con el Agente</p>
+                <p>{error.message || "Ocurrió un error inesperado al conectar con el servidor."}</p>
+              </div>
+            </div>
           )}
         </div>
       </div>
