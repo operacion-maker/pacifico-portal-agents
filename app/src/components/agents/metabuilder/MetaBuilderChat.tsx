@@ -166,51 +166,81 @@ export function MetaBuilderChat({ agentId, threadId, username }: MetaBuilderChat
   const allMessages = [...chatMessages, ...resolvedAssistant];
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Pipeline progress (sticky at top when running) */}
-      {streamState.currentStep !== "idle" && (
-        <div className="border-b border-slate-100">
-          <PipelineProgressTracker currentStep={streamState.currentStep} />
+    <div className="flex w-full h-full overflow-hidden bg-white text-sm">
+      {/* PANEL IZQUIERDO: Explorador del Activo */}
+      <div className="flex-1 flex flex-col border-r border-slate-200 bg-white overflow-hidden relative">
+        <div className="p-4 border-b border-slate-100 bg-white z-10 shadow-sm">
+          <FQNSelector onSelect={handleFQNSelect} disabled={isLoading || streamState.isAwaitingInput} />
         </div>
-      )}
-
-      {/* Messages */}
-      <div ref={containerRef} className="flex-1 overflow-y-auto px-4">
-        <div className="max-w-3xl mx-auto py-6 space-y-2">
-          {allMessages.map((msg) => (
-            <MessageBubble key={msg.id} role={msg.role} content={msg.content} />
-          ))}
-
-          {/* Streaming indicator while agent is processing */}
-          {isLoading && !streamState.isAwaitingInput && (
-            <StreamingIndicator />
-          )}
-
-          {/* HITL: DraftReviewCard appears when the graph pauses */}
-          {streamState.isAwaitingInput && streamState.draftData && (
-            <DraftReviewCard
-              draft={streamState.draftData}
-              threadId={threadId}
-              agentId={agentId}
-              onResolved={handleDraftResolved}
-            />
-          )}
-
-          {/* Error Banner */}
-          {error && (
-            <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 flex items-start gap-3 shadow-sm mx-auto w-full mt-4">
-              <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-              <div>
-                <p className="font-semibold text-red-900 mb-1">Error al comunicarse con el Agente</p>
-                <p>{error.message || "Ocurrió un error inesperado al conectar con el servidor."}</p>
+        
+        <div className="flex-1 overflow-y-auto bg-white p-6">
+          {streamState.draftData ? (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <h2 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">
+                <Database className="w-5 h-5 text-[#002A54]" /> 
+                {streamState.draftData.tableName || "Tabla en Revisión"}
+              </h2>
+              <p className="text-slate-500 mb-6 text-xs">Ajusta los metadatos generados antes de su aprobación final en Unity Catalog.</p>
+              
+              {/* Solo es editable cuando está en HITL (esperando input) */}
+              <DraftReviewCard
+                draft={streamState.draftData}
+                threadId={threadId}
+                agentId={agentId}
+                onResolved={handleDraftResolved}
+              />
+            </div>
+          ) : (
+            <div className="h-full flex flex-col items-center justify-center text-center text-slate-400 p-8">
+              <div className="w-16 h-16 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-center mb-4">
+                <Database className="w-8 h-8 text-slate-300" />
               </div>
+              <h3 className="text-slate-600 font-semibold mb-2">Workspace de Gobierno de Datos</h3>
+              <p className="max-w-md text-xs">
+                Usa la barra superior para buscar un activo por su FQN (ej. <code>catálogo.esquema.tabla</code>) y el agente MetaBuilder comenzará a generar su documentación automáticamente.
+              </p>
             </div>
           )}
         </div>
       </div>
 
-      {/* FQN Selector (replaces regular chat input for MetaBuilder) */}
-      <FQNSelector onSelect={handleFQNSelect} disabled={isLoading || streamState.isAwaitingInput} />
+      {/* PANEL DERECHO: Consola del Copiloto (Streaming IA) */}
+      <div className="w-[400px] lg:w-[450px] xl:w-[500px] flex flex-col bg-[#F9FAFB] shadow-inner relative z-0">
+        <div className="px-4 py-3 border-b border-slate-200 bg-white">
+          <h3 className="font-semibold text-[#002A54] flex items-center gap-2 text-sm">
+            Consola del Copiloto
+            {isLoading && <span className="flex w-2 h-2 rounded-full bg-emerald-500 animate-pulse ml-auto" />}
+          </h3>
+        </div>
+
+        {streamState.currentStep !== "idle" && (
+          <div className="border-b border-slate-200 bg-white px-2">
+            <PipelineProgressTracker currentStep={streamState.currentStep} />
+          </div>
+        )}
+
+        <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+          {allMessages.map((msg) => (
+            <MessageBubble key={msg.id} role={msg.role} content={msg.content} />
+          ))}
+
+          {isLoading && !streamState.isAwaitingInput && (
+            <div className="flex justify-start">
+              <StreamingIndicator />
+            </div>
+          )}
+
+          {error && (
+            <div className="rounded-xl border border-red-200 bg-white p-4 text-xs text-red-800 flex items-start gap-3 shadow-sm mt-4">
+              <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold text-red-900 mb-1">Error al comunicarse con el Agente</p>
+                <p className="break-all">{error.message || "Ocurrió un error inesperado al conectar con el servidor."}</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

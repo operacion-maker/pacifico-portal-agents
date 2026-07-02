@@ -75,16 +75,8 @@ export function DraftReviewCard({ draft, threadId, agentId, onResolved, isSubmit
         const { done, value } = await reader.read();
         if (done) break;
         const chunk = decoder.decode(value, { stream: true });
-        // Parse Vercel AI data stream format: `0:"text"\n`
-        const lines = chunk.split("\n");
-        for (const line of lines) {
-          if (line.startsWith("0:")) {
-            try {
-              const text = JSON.parse(line.slice(2)) as string;
-              fullContent += text;
-            } catch { /* skip */ }
-          }
-        }
+        // Now that the backend sends plain text (Option B), just append the chunk
+        fullContent += chunk;
       }
 
       onResolved(fullContent || (decision === "approve" ? "✅ Metadatos aprobados y publicados exitosamente en Unity Catalog." : "❌ Propuesta rechazada."));

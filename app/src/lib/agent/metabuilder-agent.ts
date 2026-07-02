@@ -34,13 +34,13 @@ function resolveToken(auth: DatabricksAuthInfo): string | null {
 
 /**
  * Converts the Databricks model serving response (which returns chunks as
- * JSON arrays of strings) into a Vercel AI SDK Data Stream.
+ * JSON arrays of strings) into a plain text ReadableStream.
  *
  * Databricks streaming format per line:
  *   ["chunk1", "chunk2"]
  * or just a plain string.
  */
-function databricksResponseToVercelStream(response: Response): ReadableStream<Uint8Array> {
+function databricksResponseToTextStream(response: Response): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
 
@@ -81,25 +81,17 @@ function databricksResponseToVercelStream(response: Response): ReadableStream<Ui
             }
 
             if (text) {
-              const data = `0:${JSON.stringify(text)}\n`;
-              controller.enqueue(encoder.encode(data));
+              // Option B: Raw Text (No Vercel Protocol wrapper)
+              controller.enqueue(encoder.encode(text));
             }
           }
         }
 
         // Flush any remaining buffer
         if (buffer.trim()) {
-          const data = `0:${JSON.stringify(buffer)}\n`;
-          controller.enqueue(encoder.encode(data));
+          controller.enqueue(encoder.encode(buffer));
         }
 
-        // Vercel AI SDK stream termination
-        controller.enqueue(
-          encoder.encode(`e:{"finishReason":"stop","usage":{"promptTokens":0,"completionTokens":0},"isContinued":false}\n`)
-        );
-        controller.enqueue(
-          encoder.encode(`d:{"finishReason":"stop","usage":{"promptTokens":0,"completionTokens":0}}\n`)
-        );
       } catch (err) {
         console.error("[MetaBuilder] Stream read error:", err);
         controller.error(err);
@@ -178,7 +170,7 @@ export async function callMetaBuilderAgent(
   };
 
   const response = await fetchMetaBuilder(payload, auth);
-  return databricksResponseToVercelStream(response);
+  return databricksResponseToTextStream(response);
 }
 
 /**
@@ -198,5 +190,5 @@ export async function callMetaBuilderAgentResume(
   };
 
   const response = await fetchMetaBuilder(payload, auth);
-  return databricksResponseToVercelStream(response);
+  return databricksResponseToTextStream(response);
 }
