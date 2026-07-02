@@ -33,65 +33,64 @@ function resolveToken(auth: DatabricksAuthInfo): string | null {
 }
 
 /**
- * Converts the Databricks model serving response (which returns chunks as
- * JSON arrays of strings) into a plain text ReadableStream.
- *
- * Databricks streaming format per line:
- *   ["chunk1", "chunk2"]
- * or just a plain string.
+ * Converts the MLflow generator response (a streaming JSON array of strings)
+ * into a Vercel AI SDK Data Stream (`0:"text"\n`).
  */
-function databricksResponseToTextStream(response: Response): ReadableStream<Uint8Array> {
+function databricksResponseToVercelStream(response: Response): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
-  const decoder = new TextDecoder();
+  const decoder = new TextDecoder("utf-8");
 
   return new ReadableStream({
     async start(controller) {
       const reader = response.body!.getReader();
-      let buffer = "";
+      let isInsideString = false;
+      let isEscaping = false;
+      let currentString = "";
+
       try {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
 
-          buffer += decoder.decode(value, { stream: true });
-
-          // Process complete lines
-          const lines = buffer.split("\n");
-          // Keep incomplete last line in buffer
-          buffer = lines.pop() ?? "";
-
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed) continue;
-
-            let text = "";
-            try {
-              // Databricks format: JSON array of strings ["chunk1", "chunk2"]
-              const parsed = JSON.parse(trimmed) as unknown;
-              if (Array.isArray(parsed)) {
-                text = parsed.map((s) => String(s)).join("");
-              } else if (typeof parsed === "string") {
-                text = parsed;
-              } else {
-                text = trimmed;
+          const textChunk = decoder.decode(value, { stream: true });
+          
+          for (let i = 0; i < textChunk.length; i++) {
+            const char = textChunk[i];
+            
+            if (!isInsideString) {
+              if (char === '"') {
+                isInsideString = true;
               }
-            } catch {
-              // Plain text chunk
-              text = trimmed;
+              continue;
             }
-
-            if (text) {
-              // Option B: Raw Text (No Vercel Protocol wrapper)
-              controller.enqueue(encoder.encode(text));
+            
+            if (isEscaping) {
+              currentString += char;
+              isEscaping = false;
+            } else if (char === '\\') {
+              currentString += char;
+              isEscaping = true;
+            } else if (char === '"') {
+              isInsideString = false;
+              // Decode the completed JSON string
+              try {
+                const decoded = JSON.parse('"' + currentString + '"');
+                if (decoded) {
+                  controller.enqueue(encoder.encode(`0:${JSON.stringify(decoded)}\n`));
+                }
+              } catch (e) {
+                console.error("[MetaBuilder] Failed to parse internal MLflow string:", currentString);
+              }
+              currentString = "";
+            } else {
+              currentString += char;
             }
           }
         }
 
-        // Flush any remaining buffer
-        if (buffer.trim()) {
-          controller.enqueue(encoder.encode(buffer));
-        }
-
+        // Vercel AI SDK termination
+        controller.enqueue(encoder.encode(`e:{"finishReason":"stop","usage":{"promptTokens":0,"completionTokens":0},"isContinued":false}\n`));
+        controller.enqueue(encoder.encode(`d:{"finishReason":"stop","usage":{"promptTokens":0,"completionTokens":0}}\n`));
       } catch (err) {
         console.error("[MetaBuilder] Stream read error:", err);
         controller.error(err);
@@ -170,7 +169,7 @@ export async function callMetaBuilderAgent(
   };
 
   const response = await fetchMetaBuilder(payload, auth);
-  return databricksResponseToTextStream(response);
+  return databricksResponseToVercelStream(response);
 }
 
 /**
@@ -190,5 +189,5 @@ export async function callMetaBuilderAgentResume(
   };
 
   const response = await fetchMetaBuilder(payload, auth);
-  return databricksResponseToTextStream(response);
+  return databricksResponseToVercelStream(response);
 }
