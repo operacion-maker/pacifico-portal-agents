@@ -16,9 +16,11 @@ import { MetaBuilderChat } from "@/components/agents/metabuilder/MetaBuilderChat
 import { useChatHistory } from "@/hooks/useChatHistory";
 import { useUsername } from "@/hooks/useUsername";
 import { useAgent } from "@/components/chat/AgentContext";
+import { useWorkspacePreferences } from "@/hooks/useWorkspacePreferences";
 
 export default function AgentChatPage() {
   const agent = useAgent();
+  useWorkspacePreferences(); // Sync governance prefs with Redis (GET/PUT/sendBeacon)
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [serverUsername, setServerUsername] = useState<string | null | undefined>(undefined);
   const { username: localUsername, loaded: localLoaded, setUsername: setLocalUsername, clearUsername } = useUsername();

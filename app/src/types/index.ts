@@ -1,8 +1,17 @@
+export type GovernanceStatus =
+  | "borrador_ia"
+  | "en_revision"
+  | "rework_pendiente"
+  | "aprobado";
+
 export interface ChatSession {
   id: string;
   title: string;
   createdAt: number;
   updatedAt: number;
+  governanceStatus?: GovernanceStatus;
+  steward?: string;
+  fqn?: string;
 }
 
 export interface ChatMessage {
